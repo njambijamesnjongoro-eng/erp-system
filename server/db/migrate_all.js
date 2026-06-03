@@ -18,6 +18,7 @@ const migrations = [
   'migrate_analytics.js',
   'migrate_portal.js',
   'migrate_enterprise.js',
+  'seed_module_permissions.js',
 ];
 
 for (const migration of migrations) {
