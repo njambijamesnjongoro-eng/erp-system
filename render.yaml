@@ -5,8 +5,7 @@ services:
     rootDir: server
     plan: free
     buildCommand: npm install
-    preDeployCommand: npm run migrate:all
-    startCommand: npm start
+    startCommand: npm run migrate:all && npm start
     healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
