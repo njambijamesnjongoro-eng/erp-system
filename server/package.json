@@ -1,0 +1,42 @@
+{
+  "name": "erp-system-server",
+  "version": "1.0.0",
+  "description": "Enterprise Resource Planning System - Backend API",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "migrate": "node db/migrate.js",
+    "migrate:all": "node db/migrate_all.js",
+    "seed": "node db/seed.js",
+    "setup": "node db/migrate.js && node db/seed.js",
+    "migrate:finance": "node db/migrate_finance.js",
+    "seed:finance": "node db/seed_finance.js",
+    "setup:finance": "node db/migrate_finance.js && node db/seed_finance.js",
+    "migrate:assets": "node db/migrate_assets.js",
+    "seed:assets": "node db/seed_assets.js",
+    "setup:assets": "node db/migrate_assets.js && node db/seed_assets.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^7.4.0",
+    "geoip-lite": "^2.0.2",
+    "helmet": "^8.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^8.0.10",
+    "pg": "^8.13.0",
+    "qrcode": "^1.5.4",
+    "speakeasy": "^2.0.0",
+    "useragent": "^2.3.0",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

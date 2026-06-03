@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: erp-system-api
+    runtime: node
+    rootDir: server
+    plan: free
+    buildCommand: npm install
+    preDeployCommand: npm run migrate:all
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: https://*.vercel.app,http://localhost:5173
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: JWT_REFRESH_EXPIRES_IN
+        value: 7d
+      - key: DB_HOST
+        fromDatabase:
+          name: erp-system-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: erp-system-db
+          property: port
+      - key: DB_USER
+        fromDatabase:
+          name: erp-system-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: erp-system-db
+          property: password
+      - key: DB_NAME
+        fromDatabase:
+          name: erp-system-db
+          property: database
+
+databases:
+  - name: erp-system-db
+    plan: free
+    databaseName: erp_system
+    user: erp_system_user
