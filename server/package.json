@@ -4,7 +4,7 @@
   "description": "Enterprise Resource Planning System - Backend API",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node db/seed.js && node db/seed_admin.js && node server.js",
     "dev": "nodemon server.js",
     "migrate": "node db/migrate.js",
     "migrate:all": "node db/migrate_all.js",
