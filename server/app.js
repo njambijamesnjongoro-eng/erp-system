@@ -18,6 +18,21 @@ const app = express();
 // Trust proxy for rate limiting behind reverse proxies
 app.set('trust proxy', 1);
 
+// CORS
+const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map(s => s.trim()).filter(Boolean);
+const isAllowedOrigin = (origin) => corsOrigins.some((allowed) => {
+  if (allowed === origin) return true;
+  if (allowed.startsWith('https://*.')) {
+    const suffix = allowed.slice('https://*.'.length);
+    return origin.startsWith('https://') && origin.endsWith(`.${suffix}`);
+  }
+  if (allowed.startsWith('http://*.')) {
+    const suffix = allowed.slice('http://*.'.length);
+    return origin.startsWith('http://') && origin.endsWith(`.${suffix}`);
+  }
+  return false;
+});
+
 // Security headers via Helmet
 app.use(helmet({
   contentSecurityPolicy: {
@@ -27,7 +42,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:"],
       fontSrc: ["'self'"],
-      connectSrc: ["'self'", process.env.CORS_ORIGIN || 'http://localhost:5173'],
+      connectSrc: ["'self'", ...corsOrigins],
       frameSrc: ["'none'"],
       objectSrc: ["'none'"],
     },
@@ -43,20 +58,6 @@ app.use(helmet({
 // Cookie parser for secure cookie handling
 app.use(cookieParser());
 
-// CORS
-const corsOrigins = (process.env.CORS_ORIGIN || 'http://localhost:5173').split(',').map(s => s.trim());
-const isAllowedOrigin = (origin) => corsOrigins.some((allowed) => {
-  if (allowed === origin) return true;
-  if (allowed.startsWith('https://*.')) {
-    const suffix = allowed.slice('https://*.'.length);
-    return origin.startsWith('https://') && origin.endsWith(`.${suffix}`);
-  }
-  if (allowed.startsWith('http://*.')) {
-    const suffix = allowed.slice('http://*.'.length);
-    return origin.startsWith('http://') && origin.endsWith(`.${suffix}`);
-  }
-  return false;
-});
 app.use(cors({
   origin: (origin, callback) => {
     if (!origin || isAllowedOrigin(origin) || process.env.NODE_ENV !== 'production') {
