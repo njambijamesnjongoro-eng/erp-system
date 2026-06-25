@@ -18,6 +18,8 @@ const migrations = [
   'migrate_analytics.js',
   'migrate_portal.js',
   'migrate_enterprise.js',
+  'seed.js',
+  'seed_admin.js',
   'seed_module_permissions.js',
 ];
 
