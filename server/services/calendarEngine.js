@@ -1,22 +1,42 @@
 const db = require('../config/db');
 
 class CalendarEngine {
+  static normalizeEventInput(data) {
+    return {
+      ...data,
+      start_time: data.start_time || data.start_date || data.start,
+      end_time: data.end_time || data.end_date || data.end || null,
+      is_all_day: data.is_all_day ?? data.all_day ?? false,
+      department_id: data.department_id || null,
+    };
+  }
+
+  static eventSelect() {
+    return `ce.*,
+      ce.start_time AS start_date,
+      ce.end_time AS end_date,
+      ce.start_time AS start,
+      ce.end_time AS "end",
+      ce.is_all_day AS all_day`;
+  }
+
   static async createEvent(data) {
     try {
+      const event = this.normalizeEventInput(data);
       const result = await db.query(
         `INSERT INTO calendar_events (title, description, event_type, start_time, end_time, is_all_day, location, department_id, created_by, color)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
         [
-          data.title,
-          data.description || null,
-          data.event_type || 'meeting',
-          data.start_time,
-          data.end_time || null,
-          data.is_all_day || false,
-          data.location || null,
-          data.department_id || null,
-          data.created_by,
-          data.color || null,
+          event.title,
+          event.description || null,
+          event.event_type || 'meeting',
+          event.start_time,
+          event.end_time,
+          event.is_all_day,
+          event.location || null,
+          event.department_id,
+          event.created_by,
+          event.color || null,
         ]
       );
 
@@ -37,20 +57,23 @@ class CalendarEngine {
 
   static async getEvents(filters = {}) {
     try {
-      let sql = `SELECT ce.*, ep.full_name AS created_by_name
+      let sql = `SELECT ${this.eventSelect()}, ep.full_name AS created_by_name
                  FROM calendar_events ce
                  LEFT JOIN employee_profiles ep ON ce.created_by = ep.id
                  WHERE 1=1`;
       const params = [];
       let paramIndex = 1;
 
-      if (filters.dateFrom) {
+      const dateFrom = filters.dateFrom || filters.date_from || filters.start;
+      const dateTo = filters.dateTo || filters.date_to || filters.end;
+
+      if (dateFrom) {
         sql += ` AND ce.end_time >= $${paramIndex++}`;
-        params.push(filters.dateFrom);
+        params.push(dateFrom);
       }
-      if (filters.dateTo) {
+      if (dateTo) {
         sql += ` AND ce.start_time <= $${paramIndex++}`;
-        params.push(filters.dateTo);
+        params.push(dateTo);
       }
       if (filters.department_id) {
         sql += ` AND (ce.department_id IS NULL OR ce.department_id = $${paramIndex++})`;
@@ -93,7 +116,7 @@ class CalendarEngine {
   static async getEventById(eventId) {
     try {
       const event = await db.query(
-        `SELECT ce.*, ep.full_name AS created_by_name
+        `SELECT ${this.eventSelect()}, ep.full_name AS created_by_name
          FROM calendar_events ce
          LEFT JOIN employee_profiles ep ON ce.created_by = ep.id
          WHERE ce.id = $1`,
@@ -119,15 +142,16 @@ class CalendarEngine {
 
   static async updateEvent(eventId, data) {
     try {
+      const event = this.normalizeEventInput(data);
       const updates = [];
       const params = [];
       let paramIndex = 1;
 
       const allowedFields = ['title', 'description', 'event_type', 'start_time', 'end_time', 'is_all_day', 'location', 'department_id', 'color'];
       for (const field of allowedFields) {
-        if (data[field] !== undefined) {
+        if (event[field] !== undefined) {
           updates.push(`${field} = $${paramIndex++}`);
-          params.push(data[field]);
+          params.push(event[field]);
         }
       }
       if (updates.length === 0) return { success: false, error: 'No fields to update' };
@@ -197,7 +221,7 @@ class CalendarEngine {
 
   static async getUpcomingEvents(days = 7, departmentId = null) {
     try {
-      let sql = `SELECT ce.*, ep.full_name AS created_by_name
+      let sql = `SELECT ${this.eventSelect()}, ep.full_name AS created_by_name
                  FROM calendar_events ce
                  LEFT JOIN employee_profiles ep ON ce.created_by = ep.id
                  WHERE ce.start_time >= CURRENT_DATE

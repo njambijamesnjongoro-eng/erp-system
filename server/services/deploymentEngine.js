@@ -73,9 +73,19 @@ class DeploymentEngine {
       };
       walkDir(uploadsDir);
     }
-    const dbResult = await db.query(
-      `SELECT COUNT(*)::int AS db_file_count, COALESCE(SUM(file_size), 0)::bigint AS db_total_size FROM file_storage`
+    const fileColumns = await db.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = 'file_storage'`
     );
+    const columns = new Set(fileColumns.rows.map((row) => row.column_name));
+    const sizeColumn = ['file_size', 'size_bytes', 'size'].find((column) => columns.has(column));
+    const dbResult = await db.query(
+      `SELECT COUNT(*)::int AS db_file_count, ${sizeColumn ? `COALESCE(SUM(${sizeColumn}), 0)::bigint` : '0::bigint'} AS db_total_size
+       FROM file_storage`
+    );
+    const total = os.totalmem();
+    const free = os.freemem();
+    const used = total - free;
     return {
       upload_directory: uploadsDir,
       disk_files: fileCount,
@@ -83,7 +93,10 @@ class DeploymentEngine {
       disk_size_mb: Math.round(totalSize / 1024 / 1024 * 100) / 100,
       db_files: dbResult.rows[0].db_file_count,
       db_size_bytes: dbResult.rows[0].db_total_size,
-      db_size_mb: Math.round(dbResult.rows[0].db_total_size / 1024 / 1024 * 100) / 100
+      db_size_mb: Math.round(dbResult.rows[0].db_total_size / 1024 / 1024 * 100) / 100,
+      total,
+      used,
+      free,
     };
   }
 

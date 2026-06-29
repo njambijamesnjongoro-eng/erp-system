@@ -2,12 +2,42 @@ const db = require('../../config/db');
 const bcrypt = require('bcryptjs');
 const SessionEngine = require('../../services/sessionEngine');
 
+const normalizeRoleName = (body) => body.role_name || body.role || null;
+
+async function upsertEmployeeProfile(userId, email, fullName, roleName) {
+  if (!fullName) return null;
+  const existing = await db.query('SELECT id FROM employee_profiles WHERE user_id = $1', [userId]);
+  if (existing.rows.length > 0) {
+    const result = await db.query(
+      `UPDATE employee_profiles
+       SET full_name = $1, email = $2, position = COALESCE($3, position), updated_at = CURRENT_TIMESTAMP
+       WHERE user_id = $4
+       RETURNING id, full_name`,
+      [fullName, email, roleName, userId]
+    );
+    return result.rows[0];
+  }
+
+  const employeeId = `USR-${Date.now()}-${Math.floor(Math.random() * 1000).toString().padStart(3, '0')}`;
+  const result = await db.query(
+    `INSERT INTO employee_profiles (employee_id, user_id, full_name, email, position, employment_type, employment_status, date_hired)
+     VALUES ($1, $2, $3, $4, $5, 'full_time', 'active', CURRENT_DATE)
+     RETURNING id, full_name`,
+    [employeeId, userId, fullName, email, roleName]
+  );
+  return result.rows[0];
+}
+
 exports.listUsers = async (req, res) => {
   try {
     const { role, status, search, page = 1, limit = 20 } = req.query;
     const params = [];
     const conditions = [];
-    let sql = `SELECT u.id, u.email, r.name as role_name, u.is_active, u.is_locked, u.last_login, u.created_at, u.updated_at FROM users u JOIN roles r ON u.role_id = r.id`;
+    let sql = `SELECT u.id, u.email, COALESCE(ep.full_name, u.email) AS full_name,
+      r.name as role_name, u.is_active, u.is_locked, u.last_login, u.created_at, u.updated_at
+      FROM users u
+      JOIN roles r ON u.role_id = r.id
+      LEFT JOIN employee_profiles ep ON ep.user_id = u.id`;
     if (role) {
       conditions.push(`r.name = $${params.length + 1}`);
       params.push(role);
@@ -20,7 +50,7 @@ exports.listUsers = async (req, res) => {
       conditions.push(`u.is_locked = true`);
     }
     if (search) {
-      conditions.push(`u.email ILIKE $${params.length + 1}`);
+      conditions.push(`(u.email ILIKE $${params.length + 1} OR ep.full_name ILIKE $${params.length + 1})`);
       params.push(`%${search}%`);
     }
     if (conditions.length > 0) sql += ` WHERE ` + conditions.join(' AND ');
@@ -40,7 +70,13 @@ exports.getUser = async (req, res) => {
   try {
     const { id } = req.params;
     const userResult = await db.query(
-      `SELECT u.id, u.email, r.name as role_name, u.is_active, u.is_locked, u.last_login, u.password_changed_at, u.created_at, u.updated_at, r.permissions FROM users u LEFT JOIN roles r ON u.role_id = r.id WHERE u.id = $1`,
+      `SELECT u.id, u.email, COALESCE(ep.full_name, u.email) AS full_name,
+        r.name as role_name, u.is_active, u.is_locked, u.last_login, u.password_changed_at,
+        u.created_at, u.updated_at, r.permissions
+       FROM users u
+       LEFT JOIN roles r ON u.role_id = r.id
+       LEFT JOIN employee_profiles ep ON ep.user_id = u.id
+       WHERE u.id = $1`,
       [id]
     );
     if (userResult.rows.length === 0) {
@@ -55,7 +91,8 @@ exports.getUser = async (req, res) => {
 
 exports.createUser = async (req, res) => {
   try {
-    const { email, password, role_name } = req.body;
+    const { email, password, full_name } = req.body;
+    const role_name = normalizeRoleName(req.body);
     if (!email || !password || !role_name) {
       return res.status(400).json({ success: false, message: 'Email, password, and role are required' });
     }
@@ -74,7 +111,8 @@ exports.createUser = async (req, res) => {
        VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id, email, role_id, is_active, created_at`,
       [email, hashedPassword, role_id]
     );
-    res.status(201).json({ success: true, data: result.rows[0] });
+    const profile = await upsertEmployeeProfile(result.rows[0].id, email, full_name, role_name);
+    res.status(201).json({ success: true, data: { ...result.rows[0], role_name, full_name: profile?.full_name || full_name || null } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -83,7 +121,8 @@ exports.createUser = async (req, res) => {
 exports.updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { email, role_name } = req.body;
+    const { email, full_name } = req.body;
+    const role_name = normalizeRoleName(req.body);
     const fields = [];
     const params = [];
     if (email !== undefined) { fields.push(`email = $${params.length + 1}`); params.push(email); }
@@ -94,18 +133,28 @@ exports.updateUser = async (req, res) => {
       }
       fields.push(`role_id = $${params.length + 1}`); params.push(roleResult.rows[0].id);
     }
-    if (fields.length === 0) {
+    if (fields.length === 0 && full_name === undefined) {
       return res.status(400).json({ success: false, message: 'No fields to update' });
     }
-    params.push(id);
-    const result = await db.query(
-      `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${params.length} RETURNING id, email, role_id, is_active, is_locked, updated_at`,
-      params
-    );
+    let result;
+    if (fields.length > 0) {
+      params.push(id);
+      result = await db.query(
+        `UPDATE users SET ${fields.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${params.length} RETURNING id, email, role_id, is_active, is_locked, updated_at`,
+        params
+      );
+    } else {
+      result = await db.query(
+        `SELECT id, email, role_id, is_active, is_locked, updated_at FROM users WHERE id = $1`,
+        [id]
+      );
+    }
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
-    res.json({ success: true, data: result.rows[0] });
+    const nextEmail = email || result.rows[0].email;
+    const profile = await upsertEmployeeProfile(id, nextEmail, full_name, role_name);
+    res.json({ success: true, data: { ...result.rows[0], role_name, full_name: profile?.full_name || full_name || null } });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -114,6 +163,9 @@ exports.updateUser = async (req, res) => {
 exports.deleteUser = async (req, res) => {
   try {
     const { id } = req.params;
+    if (id === req.user.id) {
+      return res.status(400).json({ success: false, message: 'You cannot remove your own account while logged in' });
+    }
     const result = await db.query(
       `UPDATE users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, email, is_active`,
       [id]

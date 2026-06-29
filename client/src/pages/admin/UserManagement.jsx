@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit3, Eye, Ban, CheckCircle, LogOut, X, ChevronLeft, ChevronRight, Shield, UserX } from 'lucide-react';
+import { Plus, Search, Edit3, Eye, Ban, CheckCircle, LogOut, X, Users, UserX, Trash2 } from 'lucide-react';
 import { userManagementService } from '../../api/admin';
 import { formatDate, formatDateTime } from '../../utils/helpers';
 
@@ -27,7 +27,17 @@ export function UserManagement() {
       if (statusFilter) params.status = statusFilter;
       const { data } = await userManagementService.list(params);
       setUsers(data.data || []);
-      setPagination(data.pagination || { page: 1, limit: 20, total: 0, totalPages: 0 });
+      const total = data.total ?? data.pagination?.total ?? 0;
+      const limit = data.limit ?? data.pagination?.limit ?? 20;
+      const currentPage = data.page ?? data.pagination?.page ?? page;
+      setPagination({
+        page: currentPage,
+        limit,
+        total,
+        totalPages: data.totalPages ?? data.pagination?.totalPages ?? Math.ceil(total / limit),
+        hasNext: data.pagination?.hasNext ?? currentPage * limit < total,
+        hasPrev: data.pagination?.hasPrev ?? currentPage > 1,
+      });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -44,13 +54,13 @@ export function UserManagement() {
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ email: '', password: '', full_name: '', role: 'Employee' });
+    setForm({ email: '', password: '', full_name: '', role_name: 'Employee' });
     setShowModal(true);
   };
 
   const openEdit = (user) => {
     setEditing(user);
-    setForm({ email: user.email, full_name: user.full_name, role: user.role_name || user.role, is_active: user.is_active });
+    setForm({ email: user.email, full_name: user.full_name, role_name: user.role_name || user.role, is_active: user.is_active });
     setShowModal(true);
   };
 
@@ -73,6 +83,16 @@ export function UserManagement() {
 
   const handleDeactivate = async (id) => {
     try { await userManagementService.deactivate(id); fetch(pagination.page); } catch (err) { alert(err.message); }
+  };
+
+  const handleDelete = async (user) => {
+    if (!confirm(`Remove ${user.full_name || user.email}? This will deactivate the account and end active sessions.`)) return;
+    try {
+      await userManagementService.delete(user.id);
+      fetch(pagination.page);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message);
+    }
   };
 
   const handleLock = async (id) => {
@@ -188,6 +208,7 @@ export function UserManagement() {
                             <button onClick={() => handleLock(u.id)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-red-500" title="Lock"><Ban className="w-4 h-4" /></button>
                           )}
                           <button onClick={() => handleForceLogout(u.id)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-red-500" title="Force Logout"><LogOut className="w-4 h-4" /></button>
+                          <button onClick={() => handleDelete(u)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-red-600" title="Remove User"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </td>
                     </tr>
@@ -224,7 +245,7 @@ export function UserManagement() {
               {!editing && (
                 <input placeholder="Password *" type="password" value={form.password || ''} onChange={(e) => setForm({...form, password: e.target.value})} className="input-field w-full" />
               )}
-              <select value={form.role || 'Employee'} onChange={(e) => setForm({...form, role: e.target.value})} className="input-field w-full">
+              <select value={form.role_name || 'Employee'} onChange={(e) => setForm({...form, role_name: e.target.value})} className="input-field w-full">
                 <option value="System Admin">System Admin</option>
                 <option value="CEO">CEO</option>
                 <option value="Manager">Manager</option>

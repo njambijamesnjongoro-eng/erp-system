@@ -3,24 +3,72 @@ const auditService = require('../../services/auditService');
 
 exports.getAuditLogs = async (req, res) => {
   try {
-    const { user_id, action, entity_type, date_from, date_to, page = 1, limit = 20 } = req.query;
-    const filters = { limit: parseInt(limit), offset: (parseInt(page) - 1) * parseInt(limit) };
-    if (user_id) filters.user_id = user_id;
-    if (action) filters.action = action;
-    if (entity_type) filters.entity_type = entity_type;
-    if (date_from) filters.date_from = date_from;
-    if (date_to) filters.date_to = date_to;
-    const logs = await auditService.getAuditLogs(filters);
-    const countParams = [];
-    const countConditions = [];
-    if (user_id) { countConditions.push(`user_id = $${countParams.length + 1}`); countParams.push(user_id); }
-    if (action) { countConditions.push(`action = $${countParams.length + 1}`); countParams.push(action); }
-    if (entity_type) { countConditions.push(`entity_type = $${countParams.length + 1}`); countParams.push(entity_type); }
-    if (date_from) { countConditions.push(`created_at >= $${countParams.length + 1}`); countParams.push(date_from); }
-    if (date_to) { countConditions.push(`created_at <= $${countParams.length + 1}`); countParams.push(date_to); }
-    const where = countConditions.length > 0 ? ` WHERE ` + countConditions.join(' AND ') : '';
-    const countResult = await db.query(`SELECT COUNT(*)::int AS total FROM audit_logs_immutable${where}`, countParams);
-    res.json({ success: true, data: logs, total: countResult.rows[0].total, page: parseInt(page), limit: parseInt(limit) });
+    const { user_id, user, action, entity_type, date_from, date_to, page = 1, limit = 20 } = req.query;
+    const params = [];
+    const conditions = [];
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 20;
+    const offset = (pageNum - 1) * limitNum;
+
+    if (user_id) {
+      conditions.push(`ail.user_id = $${params.length + 1}`);
+      params.push(user_id);
+    }
+    if (user) {
+      conditions.push(`u.email ILIKE $${params.length + 1}`);
+      params.push(`%${user}%`);
+    }
+    if (action) {
+      conditions.push(`ail.action = $${params.length + 1}`);
+      params.push(action);
+    }
+    if (entity_type) {
+      conditions.push(`ail.entity_type = $${params.length + 1}`);
+      params.push(entity_type);
+    }
+    if (date_from) {
+      conditions.push(`ail.created_at >= $${params.length + 1}`);
+      params.push(date_from);
+    }
+    if (date_to) {
+      conditions.push(`ail.created_at <= $${params.length + 1}`);
+      params.push(date_to);
+    }
+
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const result = await db.query(
+      `SELECT ail.*, u.email AS user_email, COALESCE(ep.full_name, u.email) AS user_name
+       FROM audit_logs_immutable ail
+       LEFT JOIN users u ON ail.user_id = u.id
+       LEFT JOIN employee_profiles ep ON ep.user_id = u.id
+       ${where}
+       ORDER BY ail.created_at DESC
+       LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, limitNum, offset]
+    );
+    const countResult = await db.query(
+      `SELECT COUNT(*)::int AS total
+       FROM audit_logs_immutable ail
+       LEFT JOIN users u ON ail.user_id = u.id
+       ${where}`,
+      params
+    );
+    const total = countResult.rows[0].total;
+    res.json({
+      success: true,
+      data: result.rows,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      pagination: {
+        page: pageNum,
+        limit: limitNum,
+        total,
+        totalPages: Math.ceil(total / limitNum),
+        hasNext: offset + result.rows.length < total,
+        hasPrev: pageNum > 1,
+      },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -100,6 +148,9 @@ exports.getAuditSummary = async (req, res) => {
     const result = await db.query(
       `SELECT
         COUNT(*)::int AS total_entries,
+        COUNT(*) FILTER (WHERE action = 'create')::int AS create_count,
+        COUNT(*) FILTER (WHERE action = 'update')::int AS update_count,
+        COUNT(*) FILTER (WHERE action = 'delete')::int AS delete_count,
         (SELECT COUNT(*)::int FROM audit_logs_immutable WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours') AS last_24h,
         (SELECT json_object_agg(action, cnt) FROM (SELECT action, COUNT(*)::int AS cnt FROM audit_logs_immutable GROUP BY action) sub) AS by_action,
         (SELECT json_object_agg(entity_type, cnt) FROM (SELECT entity_type, COUNT(*)::int AS cnt FROM audit_logs_immutable GROUP BY entity_type) sub) AS by_entity,

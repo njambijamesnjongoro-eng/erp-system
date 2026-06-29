@@ -21,7 +21,8 @@ export function DeploymentStatus() {
           deploymentService.getStorage(),
         ]);
         setHealth(hRes.data?.data || hRes.data);
-        setPerformance(pRes.data?.data || pRes.data || []);
+        const perf = pRes.data?.data || pRes.data || {};
+        setPerformance(Array.isArray(perf) ? perf : (perf.by_endpoint || perf.hourly || []));
         setEnv(eRes.data?.data || eRes.data);
         setStorage(sRes.data?.data || sRes.data);
       } catch (err) { console.error(err); } finally { setLoading(false); }
@@ -49,18 +50,18 @@ export function DeploymentStatus() {
   const healthCards = [
     {
       label: 'Server Status', value: health?.status || (health?.uptime ? 'Running' : 'Unknown'),
-      icon: Server, color: health?.status === 'running' || health?.uptime ? 'text-emerald-600' : 'text-red-600',
-      bg: health?.status === 'running' || health?.uptime ? 'bg-emerald-50' : 'bg-red-50',
-      dot: health?.status === 'running' || health?.uptime ? 'bg-emerald-500' : 'bg-red-500',
+      icon: Server, color: health?.status === 'healthy' || health?.status === 'running' || health?.server_uptime_seconds ? 'text-emerald-600' : 'text-red-600',
+      bg: health?.status === 'healthy' || health?.status === 'running' || health?.server_uptime_seconds ? 'bg-emerald-50' : 'bg-red-50',
+      dot: health?.status === 'healthy' || health?.status === 'running' || health?.server_uptime_seconds ? 'bg-emerald-500' : 'bg-red-500',
     },
     {
       label: 'Database Connection', value: health?.database === 'connected' || health?.database_status === 'connected' ? 'Connected' : 'Disconnected',
       icon: Database, color: health?.database === 'connected' || health?.database_status === 'connected' ? 'text-emerald-600' : 'text-red-600',
       bg: health?.database === 'connected' || health?.database_status === 'connected' ? 'bg-emerald-50' : 'bg-red-50',
     },
-    { label: 'Uptime', value: formatUptime(health?.uptime), icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Uptime', value: formatUptime(health?.server_uptime_seconds || health?.uptime), icon: Clock, color: 'text-blue-600', bg: 'bg-blue-50' },
     {
-      label: 'Memory Usage', value: health?.memory_usage != null ? `${(health.memory_usage).toFixed(1)}%` : (env?.memory_usage ? formatBytes(env.memory_usage) : '-'),
+      label: 'Memory Usage', value: health?.memory?.heap_used_mb != null ? `${health.memory.heap_used_mb} MB` : (health?.memory_usage != null ? `${(health.memory_usage).toFixed(1)}%` : '-'),
       icon: Cpu, color: (health?.memory_usage || 0) > 80 ? 'text-red-600' : 'text-amber-600',
       bg: (health?.memory_usage || 0) > 80 ? 'bg-red-50' : 'bg-amber-50',
       bar: health?.memory_usage != null ? health.memory_usage : null,
@@ -147,7 +148,7 @@ export function DeploymentStatus() {
               </div>
               <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <Cpu className="w-5 h-5 text-gray-400" />
-                <div><p className="font-medium">Architecture</p><p className="text-gray-500">{env?.architecture || '-'}</p></div>
+                <div><p className="font-medium">Architecture</p><p className="text-gray-500">{env?.architecture || env?.arch || '-'}</p></div>
               </div>
               <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <Cpu className="w-5 h-5 text-gray-400" />
@@ -155,7 +156,7 @@ export function DeploymentStatus() {
               </div>
               <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <HardDrive className="w-5 h-5 text-gray-400" />
-                <div><p className="font-medium">Total Memory</p><p className="text-gray-500">{env?.total_memory ? formatBytes(env.total_memory) : '-'}</p></div>
+                <div><p className="font-medium">Total Memory</p><p className="text-gray-500">{env?.total_memory ? formatBytes(env.total_memory) : env?.total_memory_mb ? `${env.total_memory_mb} MB` : '-'}</p></div>
               </div>
             </div>
           </div>
@@ -180,7 +181,7 @@ export function DeploymentStatus() {
               <div className="text-center p-6 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <Database className="w-6 h-6 mx-auto mb-2 text-amber-500" />
                 <p className="text-sm text-gray-500">Used</p>
-                <p className="text-xl font-bold text-amber-600">{formatBytes(storage.used)}</p>
+                <p className="text-xl font-bold text-amber-600">{formatBytes(storage.used ?? storage.disk_size_bytes ?? storage.db_size_bytes)}</p>
               </div>
               <div className="text-center p-6 bg-gray-50 dark:bg-gray-800 rounded-lg">
                 <CheckCircle className="w-6 h-6 mx-auto mb-2 text-emerald-500" />
