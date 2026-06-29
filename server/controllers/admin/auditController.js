@@ -187,7 +187,8 @@ exports.getAuditSummary = async (req, res) => {
         (SELECT COUNT(*)::int FROM audit_logs_immutable WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours') AS last_24h,
         (SELECT json_object_agg(action, cnt) FROM (SELECT ${actionExpr} AS action, COUNT(*)::int AS cnt FROM audit_logs_immutable ail GROUP BY ${actionExpr}) sub) AS by_action,
         (SELECT json_object_agg(entity_type, cnt) FROM (SELECT ${entityExpr} AS entity_type, COUNT(*)::int AS cnt FROM audit_logs_immutable ail GROUP BY ${entityExpr}) sub) AS by_entity,
-        (SELECT COUNT(*)::int FROM audit_logs_immutable WHERE created_at >= CURRENT_DATE - INTERVAL '30 days') AS last_30_days`
+        (SELECT COUNT(*)::int FROM audit_logs_immutable WHERE created_at >= CURRENT_DATE - INTERVAL '30 days') AS last_30_days
+       FROM audit_logs_immutable ail`
     );
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
