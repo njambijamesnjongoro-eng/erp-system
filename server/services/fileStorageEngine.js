@@ -167,11 +167,10 @@ class FileStorageEngine {
 
   static async getStorageStats() {
     const map = await this.getColumnMap();
-    const sizeExpr = map.size ? map.size : '0::bigint';
     if (!map.columns.has('category')) {
       const result = await db.query(
         `SELECT COUNT(*)::int AS total_files,
-          COALESCE(SUM(${sizeExpr}), 0)::bigint AS total_size_bytes,
+          0::bigint AS total_size_bytes,
           0::int AS document_count,
           0::int AS image_count,
           0::int AS attachment_count,
@@ -181,18 +180,17 @@ class FileStorageEngine {
       );
       return result.rows[0];
     }
+
     const result = await db.query(
       `SELECT
         COUNT(*)::int AS total_files,
-        COALESCE(SUM(${sizeExpr}), 0)::bigint AS total_size_bytes,
+        0::bigint AS total_size_bytes,
         COUNT(*) FILTER (WHERE category = 'document')::int AS document_count,
         COUNT(*) FILTER (WHERE category = 'image')::int AS image_count,
         COUNT(*) FILTER (WHERE category = 'attachment')::int AS attachment_count,
         COUNT(*) FILTER (WHERE category = 'backup')::int AS backup_count,
-        json_object_agg(category, cat_size) AS size_by_category
-       FROM (
-         SELECT category, COALESCE(SUM(${sizeExpr}), 0)::bigint AS cat_size FROM file_storage GROUP BY category
-       ) sub`
+        COALESCE(json_object_agg(COALESCE(category, 'uncategorized'), 0), '{}'::json) AS size_by_category
+       FROM file_storage`
     );
     return result.rows[0];
   }
