@@ -86,9 +86,10 @@ export function UserManagement() {
   };
 
   const handleDelete = async (user) => {
-    if (!confirm(`Remove ${user.full_name || user.email}? This will deactivate the account and end active sessions.`)) return;
+    if (!confirm(`Delete ${user.full_name || user.email}? If the user has no company records, the account will be permanently removed. Otherwise it will be deactivated and sessions ended.`)) return;
     try {
-      await userManagementService.delete(user.id);
+      const { data } = await userManagementService.delete(user.id, { hard: true });
+      if (data?.message) alert(data.message);
       fetch(pagination.page);
     } catch (err) {
       alert(err.response?.data?.message || err.message);

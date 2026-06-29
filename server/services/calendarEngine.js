@@ -68,7 +68,7 @@ class CalendarEngine {
       const dateTo = filters.dateTo || filters.date_to || filters.end;
 
       if (dateFrom) {
-        sql += ` AND ce.end_time >= $${paramIndex++}`;
+        sql += ` AND COALESCE(ce.end_time, ce.start_time) >= $${paramIndex++}`;
         params.push(dateFrom);
       }
       if (dateTo) {

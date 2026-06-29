@@ -5,7 +5,9 @@ const { authenticate, authorize } = require('../../middleware/auth');
 router.use(authenticate);
 
 router.get('/', authorize('procurement_approvals', 'read'), controller.getMyApprovals);
+router.get('/stats', authorize('procurement_approvals', 'read'), controller.getStats);
 router.get('/pending', authorize('procurement_approvals', 'read'), controller.getPending);
+router.get('/history', authorize('procurement_approvals', 'read'), controller.getHistory);
 router.get('/history/:requestId', authorize('procurement_approvals', 'read'), controller.getHistory);
 router.post('/:id/approve', authorize('procurement_approvals', 'approve'), controller.approve);
 router.post('/:id/reject', authorize('procurement_approvals', 'approve'), controller.reject);

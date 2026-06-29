@@ -14,8 +14,9 @@ export const procurementService = {
 
 export const approvalService = {
   getPending: () => api.get('/procurement/approvals/pending'),
+  getStats: () => api.get('/procurement/approvals/stats'),
   getMyApprovals: (params) => api.get('/procurement/approvals', { params }),
-  getHistory: (requestId) => api.get(`/procurement/approvals/history/${requestId}`),
+  getHistory: (requestId) => api.get(requestId ? `/procurement/approvals/history/${requestId}` : '/procurement/approvals/history'),
   approve: (id, data) => api.post(`/procurement/approvals/${id}/approve`, data),
   reject: (id, data) => api.post(`/procurement/approvals/${id}/reject`, data),
 };

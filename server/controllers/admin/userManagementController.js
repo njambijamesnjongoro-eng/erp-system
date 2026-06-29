@@ -166,6 +166,21 @@ exports.deleteUser = async (req, res) => {
     if (id === req.user.id) {
       return res.status(400).json({ success: false, message: 'You cannot remove your own account while logged in' });
     }
+
+    if (req.query.hard === 'true' || req.query.permanent === 'true') {
+      try {
+        await SessionEngine.terminateAllUserSessions(id);
+        await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
+        const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
+        if (result.rows.length === 0) {
+          return res.status(404).json({ success: false, message: 'User not found' });
+        }
+        return res.json({ success: true, data: { ...result.rows[0], deleted: true }, message: 'User permanently deleted' });
+      } catch (deleteErr) {
+        if (deleteErr.code !== '23503') throw deleteErr;
+      }
+    }
+
     const result = await db.query(
       `UPDATE users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, email, is_active`,
       [id]
@@ -174,7 +189,13 @@ exports.deleteUser = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     await SessionEngine.terminateAllUserSessions(id);
-    res.json({ success: true, data: result.rows[0] });
+    res.json({
+      success: true,
+      data: result.rows[0],
+      message: req.query.hard === 'true' || req.query.permanent === 'true'
+        ? 'User has company records, so the account was deactivated instead of permanently deleted'
+        : 'User deactivated',
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

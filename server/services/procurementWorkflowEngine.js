@@ -136,16 +136,22 @@ class ProcurementWorkflowEngine {
     return result.rows;
   }
 
-  static async getPendingApprovals(employeeId) {
+  static async getPendingApprovals(employeeId, includeAll = false) {
+    const params = [];
+    let where = `pa.status = 'pending'`;
+    if (!includeAll) {
+      params.push(employeeId);
+      where += ` AND pa.approver_id = $1`;
+    }
     const result = await db.query(
       `SELECT pa.*, pr.request_number, pr.title, pr.total_estimated_cost, pr.urgency, pr.created_at,
               ep.full_name AS requester_name
        FROM procurement_approvals pa
        JOIN procurement_requests pr ON pa.request_id = pr.id
        LEFT JOIN employee_profiles ep ON pr.requester_id = ep.id
-       WHERE pa.approver_id = $1 AND pa.status = 'pending'
+       WHERE ${where}
        ORDER BY pr.urgency DESC, pr.created_at ASC`,
-      [employeeId]
+      params
     );
     return result.rows;
   }
