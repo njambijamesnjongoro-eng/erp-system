@@ -144,7 +144,7 @@ exports.getComplianceRecords = async (req, res) => {
     const countResult = await db.query(
       `SELECT COUNT(*) OVER() AS total, cr.*, d.name AS department_name
        FROM compliance_records cr
-       LEFT JOIN departments d ON cr.entity_type = 'department' AND cr.entity_id::int = d.id
+       LEFT JOIN departments d ON cr.entity_type = 'department' AND cr.entity_id = d.id
        ${whereClause}
        ORDER BY cr.due_date ASC
        LIMIT $${idx++} OFFSET $${idx++}`,

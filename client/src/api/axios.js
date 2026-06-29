@@ -7,6 +7,12 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+export const clearAuthSession = () => {
+  localStorage.removeItem('accessToken');
+  localStorage.removeItem('refreshToken');
+  window.dispatchEvent(new Event('auth:expired'));
+};
+
 let isRefreshing = false;
 let failedQueue = [];
 
@@ -52,8 +58,7 @@ api.interceptors.response.use(
 
       const refreshToken = localStorage.getItem('refreshToken');
       if (!refreshToken) {
-        localStorage.clear();
-        window.location.href = '/login';
+        clearAuthSession();
         return Promise.reject(error);
       }
 
@@ -70,8 +75,7 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
-        localStorage.clear();
-        window.location.href = '/login';
+        clearAuthSession();
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;

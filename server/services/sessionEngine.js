@@ -13,9 +13,11 @@ class SessionEngine {
 
   static async getSession(token) {
     const result = await db.query(
-      `SELECT us.*, u.username, u.email, u.role_name
+      `SELECT us.*, u.email, r.name AS role_name, COALESCE(ep.full_name, u.email) AS username
        FROM user_sessions us
        JOIN users u ON us.user_id = u.id
+       LEFT JOIN roles r ON u.role_id = r.id
+       LEFT JOIN employee_profiles ep ON ep.user_id = u.id
        WHERE us.token = $1 AND us.is_active = true`,
       [token]
     );
@@ -57,9 +59,11 @@ class SessionEngine {
 
   static async getActiveSessions(limit = 50) {
     const result = await db.query(
-      `SELECT us.*, u.username, u.email, u.role_name
+      `SELECT us.*, u.email, r.name AS role_name, COALESCE(ep.full_name, u.email) AS username
        FROM user_sessions us
        JOIN users u ON us.user_id = u.id
+       LEFT JOIN roles r ON u.role_id = r.id
+       LEFT JOIN employee_profiles ep ON ep.user_id = u.id
        WHERE us.is_active = true
        ORDER BY us.last_activity DESC
        LIMIT $1`,
@@ -80,13 +84,14 @@ class SessionEngine {
       `SELECT COUNT(DISTINCT user_id)::int AS online_count,
               json_agg(DISTINCT jsonb_build_object(
                 'user_id', u.id,
-                'username', u.username,
+                'username', COALESCE(ep.full_name, u.email),
                 'email', u.email,
                 'last_activity', us.last_activity,
                 'ip_address', us.ip_address
               )) AS users
        FROM user_sessions us
        JOIN users u ON us.user_id = u.id
+       LEFT JOIN employee_profiles ep ON ep.user_id = u.id
        WHERE us.is_active = true AND us.last_activity >= CURRENT_TIMESTAMP - INTERVAL '15 minutes'`
     );
     return result.rows[0];

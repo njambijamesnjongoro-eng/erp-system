@@ -74,7 +74,7 @@ class APIManagementEngine {
 
   static async logApiUsage(apiKeyId, userId, endpoint, method, statusCode, responseTime, ipAddress) {
     const result = await db.query(
-      `INSERT INTO api_usage_logs (api_key_id, user_id, endpoint, method, status_code, response_time_ms, ip_address, created_at)
+      `INSERT INTO api_usage_logs (api_key_id, user_id, endpoint, method, status_code, response_time, ip_address, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
        RETURNING *`,
       [apiKeyId, userId, endpoint, method, statusCode, responseTime, ipAddress]
@@ -99,14 +99,15 @@ class APIManagementEngine {
         COUNT(*)::int AS total_calls,
         COUNT(DISTINCT endpoint)::int AS unique_endpoints,
         COUNT(DISTINCT api_key_id)::int AS active_keys,
-        ROUND(AVG(response_time_ms), 2) AS avg_response_time,
+        ROUND(AVG(response_time), 2) AS avg_response_time,
         ROUND(COUNT(*) FILTER (WHERE status_code >= 400)::numeric / NULLIF(COUNT(*), 0) * 100, 2) AS error_rate,
         COUNT(*) FILTER (WHERE status_code >= 500)::int AS server_errors,
-        COUNT(*) FILTER (WHERE status_code >= 400 AND status_code < 500)::int AS client_errors${where}`,
+        COUNT(*) FILTER (WHERE status_code >= 400 AND status_code < 500)::int AS client_errors
+       FROM api_usage_logs${where}`,
       params
     );
     const endpointStats = await db.query(
-      `SELECT endpoint, method, COUNT(*)::int AS call_count, ROUND(AVG(response_time_ms), 2) AS avg_response_time
+      `SELECT endpoint, method, COUNT(*)::int AS call_count, ROUND(AVG(response_time), 2) AS avg_response_time
        FROM api_usage_logs${where} GROUP BY endpoint, method ORDER BY call_count DESC LIMIT 20`,
       params
     );

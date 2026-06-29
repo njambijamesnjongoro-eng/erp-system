@@ -92,7 +92,7 @@ class DeploymentEngine {
       `SELECT
         DATE_TRUNC('hour', created_at) AS hour,
         COUNT(*)::int AS request_count,
-        ROUND(AVG(response_time_ms), 2) AS avg_response_time,
+        ROUND(AVG(response_time), 2) AS avg_response_time,
         ROUND(COUNT(*) FILTER (WHERE status_code >= 500)::numeric / NULLIF(COUNT(*), 0) * 100, 2) AS error_rate
        FROM api_usage_logs
        WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
@@ -103,9 +103,9 @@ class DeploymentEngine {
       `SELECT
         endpoint, method,
         COUNT(*)::int AS request_count,
-        ROUND(AVG(response_time_ms), 2) AS avg_response_time,
+        ROUND(AVG(response_time), 2) AS avg_response_time,
         ROUND(COUNT(*) FILTER (WHERE status_code >= 400)::numeric / NULLIF(COUNT(*), 0) * 100, 2) AS error_rate,
-        MAX(response_time_ms)::int AS max_response_time
+        MAX(response_time)::int AS max_response_time
        FROM api_usage_logs
        WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
        GROUP BY endpoint, method
@@ -115,7 +115,7 @@ class DeploymentEngine {
     const summary = await db.query(
       `SELECT
         COUNT(*)::int AS total_requests_24h,
-        ROUND(AVG(response_time_ms), 2) AS avg_response_time_24h,
+        ROUND(AVG(response_time), 2) AS avg_response_time_24h,
         ROUND(COUNT(*) FILTER (WHERE status_code >= 500)::numeric / NULLIF(COUNT(*), 0) * 100, 2) AS error_rate_24h,
         COUNT(*) FILTER (WHERE status_code >= 500)::int AS server_errors_24h,
         COUNT(*) FILTER (WHERE status_code >= 400 AND status_code < 500)::int AS client_errors_24h

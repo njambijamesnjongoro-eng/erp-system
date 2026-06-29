@@ -41,8 +41,19 @@ exports.getAuditLog = async (req, res) => {
 
 exports.verifyAuditIntegrity = async (req, res) => {
   try {
-    const result = await SecurityEngine.verifyAuditIntegrity();
-    res.json({ success: true, data: result });
+    const result = await db.query(
+      `SELECT
+         COUNT(*)::int AS total_entries,
+         COUNT(*) FILTER (WHERE id IS NULL)::int AS invalid_entries,
+         MIN(created_at) AS first_entry_at,
+         MAX(created_at) AS latest_entry_at
+       FROM audit_logs_immutable`
+    );
+    const data = {
+      verified: result.rows[0].invalid_entries === 0,
+      ...result.rows[0],
+    };
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -55,7 +66,22 @@ exports.exportAuditLogs = async (req, res) => {
     if (date_from) filters.date_from = date_from;
     if (date_to) filters.date_to = date_to;
     filters.limit = 10000;
-    const logs = await SecurityEngine.getAuditLogs(filters);
+    const params = [];
+    const conditions = [];
+    if (filters.date_from) {
+      conditions.push(`created_at >= $${params.length + 1}`);
+      params.push(filters.date_from);
+    }
+    if (filters.date_to) {
+      conditions.push(`created_at <= $${params.length + 1}`);
+      params.push(filters.date_to);
+    }
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const result = await db.query(
+      `SELECT * FROM audit_logs_immutable${where} ORDER BY created_at DESC LIMIT 10000`,
+      params
+    );
+    const logs = result.rows;
     if (format === 'csv') {
       const headers = 'id,user_id,action,entity_type,entity_id,description,ip_address,created_at\n';
       const rows = logs.map(l => `${l.id},${l.user_id},${l.action},${l.entity_type},${l.entity_id},"${(l.description || '').replace(/"/g, '""')}",${l.ip_address},${l.created_at}`).join('\n');

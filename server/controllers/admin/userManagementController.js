@@ -197,6 +197,11 @@ exports.unlockUser = async (req, res) => {
 exports.getUserSessions = async (req, res) => {
   try {
     const { id } = req.params;
+    if (!id) {
+      const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+      const sessions = await SessionEngine.getActiveSessions(limit);
+      return res.json({ success: true, data: sessions });
+    }
     const user = await db.query(`SELECT id FROM users WHERE id = $1`, [id]);
     if (user.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });

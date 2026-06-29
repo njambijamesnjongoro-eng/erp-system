@@ -247,6 +247,10 @@ exports.saveWidgetConfig = async (req, res) => {
   try {
     const { id } = req.params;
     const { widget_type, config, position, size, title } = req.body;
+    const gridPosition = {
+      position: Number.isFinite(Number(position)) ? Number(position) : 0,
+      size: size || 'medium',
+    };
 
     if (id) {
       const existing = await db.query('SELECT id FROM dashboard_widgets WHERE id = $1 AND user_id = $2', [id, req.user.id]);
@@ -256,22 +260,21 @@ exports.saveWidgetConfig = async (req, res) => {
       const result = await db.query(
         `UPDATE dashboard_widgets
          SET widget_type = COALESCE($1, widget_type),
-             config = COALESCE($2, config),
-             position = COALESCE($3, position),
-             size = COALESCE($4, size),
-             title = COALESCE($5, title),
+             config = COALESCE($2::jsonb, config),
+             grid_position = COALESCE($3::jsonb, grid_position),
+             title = COALESCE($4, title),
              updated_at = CURRENT_TIMESTAMP
-         WHERE id = $6 AND user_id = $7
+         WHERE id = $5 AND user_id = $6
          RETURNING *`,
-        [widget_type, config ? JSON.stringify(config) : null, position, size, title, id, req.user.id]
+        [widget_type, config ? JSON.stringify(config) : null, JSON.stringify(gridPosition), title, id, req.user.id]
       );
       return res.json({ success: true, data: result.rows[0] });
     }
 
     const result = await db.query(
-      `INSERT INTO dashboard_widgets (user_id, widget_type, config, position, size, title)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-      [req.user.id, widget_type, JSON.stringify(config || {}), position || 0, size || 'medium', title || '']
+      `INSERT INTO dashboard_widgets (user_id, widget_type, config, grid_position, title)
+       VALUES ($1, $2, $3::jsonb, $4::jsonb, $5) RETURNING *`,
+      [req.user.id, widget_type, JSON.stringify(config || {}), JSON.stringify(gridPosition), title || '']
     );
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) {
@@ -282,7 +285,12 @@ exports.saveWidgetConfig = async (req, res) => {
 exports.getWidgets = async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT * FROM dashboard_widgets WHERE user_id = $1 ORDER BY position ASC`,
+      `SELECT *,
+        COALESCE((grid_position->>'position')::int, 0) AS position,
+        COALESCE(grid_position->>'size', 'medium') AS size
+       FROM dashboard_widgets
+       WHERE user_id = $1
+       ORDER BY COALESCE((grid_position->>'position')::int, 0), created_at ASC`,
       [req.user.id]
     );
     res.json({ success: true, data: result.rows });

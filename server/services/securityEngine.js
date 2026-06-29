@@ -210,10 +210,48 @@ async function removeTrustedDevice(deviceId, userId) {
   );
 }
 
-async function getSecurityEvents(userId, limit = 50) {
+async function getSecurityEvents(userIdOrFilters, limit = 50) {
+  if (userIdOrFilters && typeof userIdOrFilters === 'object') {
+    const filters = userIdOrFilters;
+    const params = [];
+    const conditions = [];
+    let sql = `
+      SELECT se.*, COALESCE(se.source_ip, se.ip_address) AS source_ip, u.email AS user_email
+      FROM security_events se
+      LEFT JOIN users u ON se.user_id = u.id`;
+
+    if (filters.event_type) {
+      conditions.push(`se.event_type = $${params.length + 1}`);
+      params.push(filters.event_type);
+    }
+    if (filters.severity) {
+      conditions.push(`se.severity = $${params.length + 1}`);
+      params.push(filters.severity);
+    }
+    if (filters.is_resolved !== undefined) {
+      conditions.push(`COALESCE(se.is_resolved, false) = $${params.length + 1}`);
+      params.push(filters.is_resolved);
+    }
+    if (filters.date_from) {
+      conditions.push(`se.created_at >= $${params.length + 1}`);
+      params.push(filters.date_from);
+    }
+    if (filters.date_to) {
+      conditions.push(`se.created_at <= $${params.length + 1}`);
+      params.push(filters.date_to);
+    }
+
+    if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+    sql += ` ORDER BY se.created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(filters.limit || 50, filters.offset || 0);
+
+    const result = await query(sql, params);
+    return result.rows;
+  }
+
   const result = await query(
     'SELECT * FROM security_events WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2',
-    [userId, limit]
+    [userIdOrFilters, limit]
   );
   return result.rows;
 }
@@ -231,6 +269,152 @@ async function getSecurityDashboardStats() {
     activeSessions: activeSessions.rows[0].count,
     events24h: todayEvents.rows[0].count,
   };
+}
+
+async function resolveSecurityEvent(id, resolvedBy) {
+  const result = await query(
+    `UPDATE security_events
+     SET is_resolved = true, resolved_by = $2, resolved_at = CURRENT_TIMESTAMP
+     WHERE id = $1
+     RETURNING *`,
+    [id, resolvedBy]
+  );
+  return result.rows[0] || null;
+}
+
+async function getSystemSecuritySummary() {
+  const [dashboard, bySeverity, byType, recentEvents, failedLogins] = await Promise.all([
+    getSecurityDashboardStats(),
+    query(`SELECT severity, COUNT(*)::int AS count FROM security_events GROUP BY severity ORDER BY count DESC`),
+    query(`SELECT event_type, COUNT(*)::int AS count FROM security_events GROUP BY event_type ORDER BY count DESC LIMIT 10`),
+    query(`SELECT * FROM security_events ORDER BY created_at DESC LIMIT 10`),
+    query(`SELECT COUNT(*)::int AS count FROM authentication_logs WHERE status = 'FAILED' AND created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'`),
+  ]);
+
+  return {
+    ...dashboard,
+    failedLogins24h: failedLogins.rows[0].count,
+    bySeverity: bySeverity.rows,
+    byType: byType.rows,
+    recentEvents: recentEvents.rows,
+  };
+}
+
+async function detectSuspiciousActivity() {
+  const result = await query(
+    `SELECT
+       email,
+       ip_address,
+       COUNT(*)::int AS failed_attempts,
+       MAX(created_at) AS last_seen
+     FROM authentication_logs
+     WHERE status = 'FAILED' AND created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours'
+     GROUP BY email, ip_address
+     HAVING COUNT(*) >= 3
+     ORDER BY failed_attempts DESC
+     LIMIT 25`
+  );
+  return result.rows.map((row) => ({
+    type: 'repeated_failed_login',
+    severity: row.failed_attempts >= 10 ? 'high' : 'medium',
+    description: `${row.failed_attempts} failed login attempts in the last 24 hours`,
+    ...row,
+  }));
+}
+
+async function getLoginAttempts(filters = {}) {
+  const params = [];
+  const conditions = [];
+  let sql = `
+    SELECT id, user_id, email, ip_address, user_agent, action AS attempt_type,
+           (status = 'SUCCESS') AS success, failure_reason, created_at
+    FROM authentication_logs`;
+
+  if (filters.email) {
+    conditions.push(`email = $${params.length + 1}`);
+    params.push(filters.email);
+  }
+  if (filters.ip_address) {
+    conditions.push(`ip_address = $${params.length + 1}`);
+    params.push(filters.ip_address);
+  }
+  if (filters.success !== undefined) {
+    conditions.push(`(status = 'SUCCESS') = $${params.length + 1}`);
+    params.push(filters.success);
+  }
+  if (filters.date_from) {
+    conditions.push(`created_at >= $${params.length + 1}`);
+    params.push(filters.date_from);
+  }
+  if (filters.date_to) {
+    conditions.push(`created_at <= $${params.length + 1}`);
+    params.push(filters.date_to);
+  }
+
+  if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+  sql += ` ORDER BY created_at DESC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+  params.push(filters.limit || 50, filters.offset || 0);
+
+  const result = await query(sql, params);
+  return result.rows;
+}
+
+async function getBlacklist() {
+  const result = await query(
+    `SELECT ib.*, u.email AS blacklisted_by_email
+     FROM ip_blacklist ib
+     LEFT JOIN users u ON ib.blacklisted_by = u.id
+     WHERE ib.is_active = true
+     ORDER BY ib.created_at DESC`
+  );
+  return result.rows;
+}
+
+async function blacklistIP(ipAddress, reason, userId) {
+  const result = await query(
+    `INSERT INTO ip_blacklist (ip_address, reason, blacklisted_by, is_active, created_at)
+     VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
+     RETURNING *`,
+    [ipAddress, reason, userId]
+  );
+  return result.rows[0];
+}
+
+async function removeFromBlacklist(id) {
+  const result = await query(
+    `UPDATE ip_blacklist SET is_active = false WHERE id = $1 RETURNING *`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+async function getWhitelist() {
+  const result = await query(
+    `SELECT iw.*, u.email AS created_by_email
+     FROM ip_whitelist iw
+     LEFT JOIN users u ON iw.created_by = u.id
+     WHERE iw.is_active = true
+     ORDER BY iw.created_at DESC`
+  );
+  return result.rows;
+}
+
+async function whitelistIP(ipAddress, description, userId) {
+  const result = await query(
+    `INSERT INTO ip_whitelist (ip_address, description, created_by, is_active, created_at)
+     VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP)
+     RETURNING *`,
+    [ipAddress, description, userId]
+  );
+  return result.rows[0];
+}
+
+async function removeFromWhitelist(id) {
+  const result = await query(
+    `UPDATE ip_whitelist SET is_active = false WHERE id = $1 RETURNING *`,
+    [id]
+  );
+  return result.rows[0] || null;
 }
 
 module.exports = {
@@ -251,4 +435,14 @@ module.exports = {
   removeTrustedDevice,
   getSecurityEvents,
   getSecurityDashboardStats,
+  resolveSecurityEvent,
+  getSystemSecuritySummary,
+  detectSuspiciousActivity,
+  getLoginAttempts,
+  getBlacklist,
+  blacklistIP,
+  removeFromBlacklist,
+  getWhitelist,
+  whitelistIP,
+  removeFromWhitelist,
 };

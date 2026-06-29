@@ -1,11 +1,18 @@
 import { createContext, useState, useEffect, useCallback } from 'react';
-import api from '../api/axios';
+import api, { clearAuthSession } from '../api/axios';
 
 export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const handleExpiredSession = useCallback(() => {
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+    setUser(null);
+    setLoading(false);
+  }, []);
 
   const fetchUser = useCallback(async () => {
     const token = localStorage.getItem('accessToken');
@@ -17,16 +24,20 @@ export function AuthProvider({ children }) {
       const { data } = await api.get('/auth/me');
       setUser(data.data);
     } catch {
-      localStorage.clear();
-      setUser(null);
+      handleExpiredSession();
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleExpiredSession]);
 
   useEffect(() => {
     fetchUser();
   }, [fetchUser]);
+
+  useEffect(() => {
+    window.addEventListener('auth:expired', handleExpiredSession);
+    return () => window.removeEventListener('auth:expired', handleExpiredSession);
+  }, [handleExpiredSession]);
 
   const login = async (email, password, deviceFingerprint) => {
     const { data } = await api.post('/auth/login', { email, password, deviceFingerprint });
@@ -43,9 +54,7 @@ export function AuthProvider({ children }) {
     } catch {
       // ignore
     } finally {
-      localStorage.clear();
-      setUser(null);
-      window.location.href = '/login';
+      clearAuthSession();
     }
   };
 
