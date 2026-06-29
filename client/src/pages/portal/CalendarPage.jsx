@@ -76,6 +76,7 @@ export function CalendarPage() {
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
   const startPad = firstDay.getDay();
+  const endPad = lastDay.getDay();
   const daysInMonth = lastDay.getDate();
   const today = new Date();
 
@@ -84,7 +85,7 @@ export function CalendarPage() {
       setLoading(true);
       setError(null);
       const start = new Date(year, month, 1 - startPad);
-      const end = new Date(year, month + 1, 6 - lastDay.getDay());
+      const end = new Date(year, month + 1, 6 - endPad);
       const [eventsRes, statsRes] = await Promise.all([
         calendarService.getAll({ start: start.toISOString(), end: end.toISOString() }),
         calendarService.getStats(),
@@ -96,7 +97,7 @@ export function CalendarPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, month, startPad, lastDay]);
+  }, [year, month, startPad, endPad]);
 
   useEffect(() => { loadData(); }, [loadData]);
 
