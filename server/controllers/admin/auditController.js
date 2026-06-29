@@ -1,8 +1,31 @@
 const db = require('../../config/db');
 const auditService = require('../../services/auditService');
 
+let auditColumnCache = null;
+
+async function getAuditColumnMap() {
+  if (auditColumnCache) return auditColumnCache;
+  const result = await db.query(
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = 'public' AND table_name = 'audit_logs_immutable'`
+  );
+  const columns = new Set(result.rows.map((row) => row.column_name));
+  const first = (names) => names.find((name) => columns.has(name)) || null;
+  auditColumnCache = {
+    action: first(['action', 'operation', 'event_type']),
+    entityType: first(['entity_type', 'table_name', 'resource']),
+    entityId: first(['entity_id', 'record_id', 'resource_id']),
+    description: first(['description', 'query_text', 'details']),
+    ipAddress: first(['ip_address', 'source_ip']),
+  };
+  return auditColumnCache;
+}
+
+const col = (name, fallback) => (name ? `ail.${name}` : fallback);
+
 exports.getAuditLogs = async (req, res) => {
   try {
+    const map = await getAuditColumnMap();
     const { user_id, user, action, entity_type, date_from, date_to, page = 1, limit = 20 } = req.query;
     const params = [];
     const conditions = [];
@@ -18,12 +41,12 @@ exports.getAuditLogs = async (req, res) => {
       conditions.push(`u.email ILIKE $${params.length + 1}`);
       params.push(`%${user}%`);
     }
-    if (action) {
-      conditions.push(`ail.action = $${params.length + 1}`);
+    if (action && map.action) {
+      conditions.push(`ail.${map.action} = $${params.length + 1}`);
       params.push(action);
     }
-    if (entity_type) {
-      conditions.push(`ail.entity_type = $${params.length + 1}`);
+    if (entity_type && map.entityType) {
+      conditions.push(`ail.${map.entityType} = $${params.length + 1}`);
       params.push(entity_type);
     }
     if (date_from) {
@@ -37,7 +60,14 @@ exports.getAuditLogs = async (req, res) => {
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     const result = await db.query(
-      `SELECT ail.*, u.email AS user_email, COALESCE(ep.full_name, u.email) AS user_name
+      `SELECT ail.*,
+        ${col(map.action, "'audit'")} AS action,
+        ${col(map.entityType, "'system'")} AS entity_type,
+        ${col(map.entityId, 'NULL::uuid')} AS entity_id,
+        ${col(map.description, 'NULL::text')} AS description,
+        ${col(map.ipAddress, 'NULL::text')} AS ip_address,
+        u.email AS user_email,
+        COALESCE(ep.full_name, u.email) AS user_name
        FROM audit_logs_immutable ail
        LEFT JOIN users u ON ail.user_id = u.id
        LEFT JOIN employee_profiles ep ON ep.user_id = u.id
@@ -145,15 +175,18 @@ exports.exportAuditLogs = async (req, res) => {
 
 exports.getAuditSummary = async (req, res) => {
   try {
+    const map = await getAuditColumnMap();
+    const actionExpr = `COALESCE(${col(map.action, "'audit'")}::text, 'audit')`;
+    const entityExpr = `COALESCE(${col(map.entityType, "'system'")}::text, 'system')`;
     const result = await db.query(
       `SELECT
         COUNT(*)::int AS total_entries,
-        COUNT(*) FILTER (WHERE action = 'create')::int AS create_count,
-        COUNT(*) FILTER (WHERE action = 'update')::int AS update_count,
-        COUNT(*) FILTER (WHERE action = 'delete')::int AS delete_count,
+        COUNT(*) FILTER (WHERE LOWER(${actionExpr}) IN ('create','insert'))::int AS create_count,
+        COUNT(*) FILTER (WHERE LOWER(${actionExpr}) = 'update')::int AS update_count,
+        COUNT(*) FILTER (WHERE LOWER(${actionExpr}) IN ('delete','remove'))::int AS delete_count,
         (SELECT COUNT(*)::int FROM audit_logs_immutable WHERE created_at >= CURRENT_TIMESTAMP - INTERVAL '24 hours') AS last_24h,
-        (SELECT json_object_agg(action, cnt) FROM (SELECT action, COUNT(*)::int AS cnt FROM audit_logs_immutable GROUP BY action) sub) AS by_action,
-        (SELECT json_object_agg(entity_type, cnt) FROM (SELECT entity_type, COUNT(*)::int AS cnt FROM audit_logs_immutable GROUP BY entity_type) sub) AS by_entity,
+        (SELECT json_object_agg(action, cnt) FROM (SELECT ${actionExpr} AS action, COUNT(*)::int AS cnt FROM audit_logs_immutable ail GROUP BY ${actionExpr}) sub) AS by_action,
+        (SELECT json_object_agg(entity_type, cnt) FROM (SELECT ${entityExpr} AS entity_type, COUNT(*)::int AS cnt FROM audit_logs_immutable ail GROUP BY ${entityExpr}) sub) AS by_entity,
         (SELECT COUNT(*)::int FROM audit_logs_immutable WHERE created_at >= CURRENT_DATE - INTERVAL '30 days') AS last_30_days`
     );
     res.json({ success: true, data: result.rows[0] });
