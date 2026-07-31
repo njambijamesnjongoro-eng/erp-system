@@ -87,4 +87,5 @@ export const procurementDashboardService = {
   getMonthlyTrend: () => api.get('/procurement/dashboard/monthly-trend'),
   getTopSuppliers: () => api.get('/procurement/dashboard/top-suppliers'),
   getPendingApprovalsCount: () => api.get('/procurement/dashboard/pending-approvals-count'),
+  downloadReportPdf: (type, params) => api.get(`/procurement/reports/${type}/pdf`, { params, responseType: 'blob' }),
 };

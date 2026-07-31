@@ -3,11 +3,13 @@ import { TrendingUp, TrendingDown, BarChart3, PieChart, Download } from 'lucide-
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
 import { reportService } from '../../api/finance';
 import { formatCurrency, formatDate } from '../../utils/helpers';
+import { downloadBlob } from '../../utils/download';
 
 export function ReportsPage() {
   const [activeReport, setActiveReport] = useState('pl');
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
   const [params, setParams] = useState({ from_date: `${new Date().getFullYear()}-01-01`, to_date: new Date().toISOString().split('T')[0], fiscal_year: new Date().getFullYear() });
 
   const fetchReport = async () => {
@@ -38,6 +40,28 @@ export function ReportsPage() {
     { key: 'bs', label: 'Balance Sheet', icon: PieChart },
   ];
 
+  const pdfTypeMap = {
+    pl: 'profit-loss',
+    expenses: 'expenses',
+    budgets: 'budgets',
+    taxes: 'taxes',
+    payroll: 'payroll',
+    bs: 'balance-sheet',
+  };
+
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const type = pdfTypeMap[activeReport];
+      const res = await reportService.downloadPdf(type, activeReport === 'bs' ? {} : params);
+      downloadBlob(res, `${type}.pdf`);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to download PDF report');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -45,6 +69,9 @@ export function ReportsPage() {
           <h1 className="text-2xl font-bold">Financial Reports</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">View and export financial reports</p>
         </div>
+        <button onClick={handleDownloadPdf} disabled={downloading || loading} className="btn-secondary gap-2 disabled:opacity-50">
+          <Download className="w-4 h-4" /> {downloading ? 'Preparing...' : 'Download PDF'}
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-2">

@@ -68,4 +68,5 @@ export const reportService = {
   taxSummary: (params) => api.get('/finance/reports/taxes', { params }),
   payrollSummary: (params) => api.get('/finance/reports/payroll', { params }),
   balanceSheet: () => api.get('/finance/reports/balance-sheet'),
+  downloadPdf: (type, params) => api.get(`/finance/reports/${type}/pdf`, { params, responseType: 'blob' }),
 };

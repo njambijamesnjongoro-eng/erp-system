@@ -168,6 +168,7 @@ app.use('/api/procurement/inventory', require('./routes/procurement/inventory'))
 app.use('/api/procurement/warehouses', require('./routes/procurement/warehouses'));
 app.use('/api/procurement/goods-receipt', require('./routes/procurement/goods-receipt'));
 app.use('/api/procurement/dashboard', require('./routes/procurement/dashboard'));
+app.use('/api/procurement/reports', require('./routes/procurement/reports'));
 
 // Analytics & BI Module
 app.use('/api/analytics/dashboard', require('./routes/analytics/dashboard'));

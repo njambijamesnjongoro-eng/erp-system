@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { FileText, Download, TrendingUp, DollarSign, Package, Users, Award, AlertTriangle, Calendar } from 'lucide-react';
 import { procurementDashboardService, supplierService, inventoryService } from '../../api/procurement';
 import { formatCurrency, formatDate } from '../../utils/helpers';
+import { downloadBlob } from '../../utils/download';
 import { useAuth } from '../../hooks/useAuth';
 
 const fmt = (n) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0 }).format(n || 0);
@@ -25,6 +26,7 @@ export function ProcurementReports() {
   const [supplierFilter, setSupplierFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const [downloading, setDownloading] = useState(false);
 
   const tabs = ['overview', 'stock', 'supplier', 'spend'];
 
@@ -74,6 +76,23 @@ export function ProcurementReports() {
 
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const res = await procurementDashboardService.downloadReportPdf(activeTab, {
+        from_date: dateFrom || undefined,
+        to_date: dateTo || undefined,
+        department: departmentFilter || undefined,
+        supplier_id: supplierFilter || undefined,
+      });
+      downloadBlob(res, `procurement-${activeTab}.pdf`);
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to download PDF report');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (loading) return <div className="flex justify-center py-20"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" /></div>;
 
   return (
@@ -83,7 +102,9 @@ export function ProcurementReports() {
           <h1 className="text-2xl font-bold">Procurement Reports</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Analytics and insights</p>
         </div>
-        <button className="btn-secondary gap-2"><Download className="w-4 h-4" /> Export</button>
+        <button onClick={handleDownloadPdf} disabled={downloading} className="btn-secondary gap-2 disabled:opacity-50">
+          <Download className="w-4 h-4" /> {downloading ? 'Preparing...' : 'Download PDF'}
+        </button>
       </div>
 
       <div className="flex flex-wrap gap-3">
@@ -185,7 +206,7 @@ export function ProcurementReports() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="font-semibold">Low Stock Items</h3>
                 <div className="flex gap-2">
-                  <button className="btn-secondary btn-sm gap-1"><Download className="w-3 h-3" /> Export CSV</button>
+                  <button onClick={handleDownloadPdf} disabled={downloading} className="btn-secondary btn-sm gap-1 disabled:opacity-50"><Download className="w-3 h-3" /> PDF</button>
                 </div>
               </div>
               <div className="overflow-x-auto">
