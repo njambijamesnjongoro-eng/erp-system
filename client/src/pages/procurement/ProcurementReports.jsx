@@ -29,6 +29,14 @@ export function ProcurementReports() {
   const [downloading, setDownloading] = useState(false);
 
   const tabs = ['overview', 'stock', 'supplier', 'spend'];
+  const trendData = monthlyTrend.map((row) => ({
+    ...row,
+    report_total: Number(row.total_amount ?? row.total ?? row.amount ?? 0),
+  }));
+  const spendingData = deptSpending.map((row) => ({
+    ...row,
+    report_total: Number(row.amount ?? row.total ?? row.total_amount ?? 0),
+  }));
 
   useEffect(() => {
     const load = async () => {
@@ -152,7 +160,7 @@ export function ProcurementReports() {
                 <h3 className="font-semibold mb-4">Procurement Trend</h3>
                 {monthlyTrend.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
-                    <AreaChart data={monthlyTrend}>
+                    <AreaChart data={trendData}>
                       <defs>
                         <linearGradient id="colorAmt" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
@@ -163,7 +171,7 @@ export function ProcurementReports() {
                       <XAxis dataKey="month" tickFormatter={m => months[m - 1] || m} />
                       <YAxis tickFormatter={v => `KES ${(v / 1000).toFixed(0)}k`} />
                       <Tooltip formatter={v => fmt(v)} labelFormatter={l => `Month ${l}`} />
-                      <Area type="monotone" dataKey="total_amount || total" stroke="#10b981" fill="url(#colorAmt)" />
+                      <Area type="monotone" dataKey="report_total" stroke="#10b981" fill="url(#colorAmt)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (
@@ -178,7 +186,7 @@ export function ProcurementReports() {
                 {deptSpending.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
-                      <Pie data={deptSpending} dataKey="amount || total" nameKey="department" cx="50%" cy="50%" outerRadius={100} label={({ department, percent }) => `${department} (${(percent * 100).toFixed(0)}%)`}>
+                      <Pie data={spendingData} dataKey="report_total" nameKey="department" cx="50%" cy="50%" outerRadius={100} label={({ department, percent }) => `${department} (${(percent * 100).toFixed(0)}%)`}>
                         {deptSpending.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                       </Pie>
                       <Tooltip formatter={v => fmt(v)} />
@@ -298,12 +306,12 @@ export function ProcurementReports() {
               <h3 className="font-semibold mb-4">Department Spending Comparison</h3>
               {deptSpending.length > 0 ? (
                 <ResponsiveContainer width="100%" height={350}>
-                  <BarChart data={deptSpending}>
+                  <BarChart data={spendingData}>
                     <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                     <XAxis dataKey="department" />
                     <YAxis tickFormatter={v => `KES ${(v / 1000).toFixed(0)}k`} />
                     <Tooltip formatter={v => fmt(v)} />
-                    <Bar dataKey="amount || total" fill="#3b82f6" radius={[4, 4, 0, 0]}>
+                    <Bar dataKey="report_total" fill="#3b82f6" radius={[4, 4, 0, 0]}>
                       {deptSpending.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                     </Bar>
                   </BarChart>
@@ -321,7 +329,7 @@ export function ProcurementReports() {
                 {deptSpending.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
                     <PieChart>
-                      <Pie data={deptSpending} dataKey="amount || total" nameKey="department" cx="50%" cy="50%" outerRadius={90} label={({ department, percent }) => `${department} (${(percent * 100).toFixed(0)}%)`}>
+                      <Pie data={spendingData} dataKey="report_total" nameKey="department" cx="50%" cy="50%" outerRadius={90} label={({ department, percent }) => `${department} (${(percent * 100).toFixed(0)}%)`}>
                         {deptSpending.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
                       </Pie>
                       <Tooltip formatter={v => fmt(v)} />
@@ -338,7 +346,7 @@ export function ProcurementReports() {
                 <h3 className="font-semibold mb-4">Monthly Spend Trend</h3>
                 {monthlyTrend.length > 0 ? (
                   <ResponsiveContainer width="100%" height={300}>
-                    <AreaChart data={monthlyTrend}>
+                    <AreaChart data={trendData}>
                       <defs>
                         <linearGradient id="spendGrad" x1="0" y1="0" x2="0" y2="1">
                           <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -349,7 +357,7 @@ export function ProcurementReports() {
                       <XAxis dataKey="month" tickFormatter={m => months[m - 1] || m} />
                       <YAxis tickFormatter={v => `KES ${(v / 1000).toFixed(0)}k`} />
                       <Tooltip formatter={v => fmt(v)} />
-                      <Area type="monotone" dataKey="total_amount || total" stroke="#3b82f6" fill="url(#spendGrad)" />
+                      <Area type="monotone" dataKey="report_total" stroke="#3b82f6" fill="url(#spendGrad)" />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (

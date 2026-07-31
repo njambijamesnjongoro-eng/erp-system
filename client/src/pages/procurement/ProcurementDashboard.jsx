@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { ShoppingCart, FileText, Users, AlertTriangle, Package, DollarSign, CheckCircle, Clock, Plus, Eye } from 'lucide-react';
+import { ShoppingCart, FileText, Users, AlertTriangle, Package, DollarSign, CheckCircle, Clock, Plus, Eye, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { procurementDashboardService, inventoryService, approvalService } from '../../api/procurement';
 import { formatCurrency, formatDate, getStatusColor } from '../../utils/helpers';
+import { downloadBlob } from '../../utils/download';
 import { useAuth } from '../../hooks/useAuth';
 
-const fmt = (n) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n || 0);
+const fmt = (n) => new Intl.NumberFormat('en-KE', { style: 'currency', currency: 'KES', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Number(n) || 0);
 
 export function ProcurementDashboard() {
   const { user } = useAuth();
@@ -18,6 +19,7 @@ export function ProcurementDashboard() {
   const [pendingApprovals, setPendingApprovals] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -57,10 +59,22 @@ export function ProcurementDashboard() {
   ];
 
   const quickStats = [
-    { label: 'Inventory Value', value: fmt(stats?.inventory_value ?? 0), icon: Package },
+    { label: 'Inventory Value', value: fmt(stats?.inventory_value?.total_value ?? stats?.inventory_value ?? 0), icon: Package },
     { label: 'Pending Approvals', value: pendingApprovalsCount?.total ?? 0, sub: pendingApprovalsCount ? `${pendingApprovalsCount.my_role ?? 0} for you` : null, icon: CheckCircle },
     { label: 'Overdue Deliveries', value: stats?.overdue_deliveries ?? 0, icon: Clock },
   ];
+
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const res = await procurementDashboardService.downloadReportPdf('overview');
+      downloadBlob(res, 'procurement-overview.pdf');
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to download PDF report');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -69,7 +83,13 @@ export function ProcurementDashboard() {
           <h1 className="text-2xl font-bold text-gray-900">Procurement & Inventory Dashboard</h1>
           <p className="text-sm text-gray-500 mt-1">Overview of procurement activities and stock levels</p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap justify-end gap-3">
+          <button onClick={handleDownloadPdf} disabled={downloading} className="btn btn-secondary inline-flex items-center gap-2 disabled:opacity-50">
+            <Download className="w-4 h-4" /> {downloading ? 'Preparing...' : 'Download PDF'}
+          </button>
+          <Link to="/procurement/reports" className="btn btn-secondary inline-flex items-center gap-2">
+            <FileText className="w-4 h-4" /> Reports
+          </Link>
           <Link to="/procurement/requests?action=new" className="btn btn-primary inline-flex items-center gap-2">
             <Plus className="w-4 h-4" /> New Request
           </Link>

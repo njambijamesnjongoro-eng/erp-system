@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { DollarSign, TrendingUp, TrendingDown, Briefcase, FileText, AlertTriangle, CreditCard, BarChart3, PieChart, Receipt } from 'lucide-react';
+import { DollarSign, TrendingUp, TrendingDown, Briefcase, FileText, AlertTriangle, CreditCard, BarChart3, PieChart, Receipt, Download } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart as RPie, Pie, Cell, LineChart, Line } from 'recharts';
-import { financeDashboardService } from '../../api/finance';
+import { financeDashboardService, reportService } from '../../api/finance';
 import { formatCurrency, getStatusColor } from '../../utils/helpers';
+import { downloadBlob } from '../../utils/download';
 import { useAuth } from '../../hooks/useAuth';
 import { Link } from 'react-router-dom';
 
@@ -12,6 +13,7 @@ export function FinanceDashboard() {
   const { hasRole } = useAuth();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const fetch = async () => {
@@ -31,12 +33,34 @@ export function FinanceDashboard() {
     { name: 'Remaining', value: data.remainingBudget || 0 },
   ];
 
+  const handleDownloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const fromDate = `${new Date().getFullYear()}-01-01`;
+      const res = await reportService.downloadPdf('profit-loss', { from_date: fromDate, to_date: today });
+      downloadBlob(res, 'finance-profit-loss.pdf');
+    } catch (err) {
+      alert(err.response?.data?.message || err.message || 'Failed to download PDF report');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold">Finance Dashboard</h1>
           <p className="text-gray-500 dark:text-gray-400 mt-1">Financial overview and analytics</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-3">
+          <Link to="/finance/reports" className="btn-secondary inline-flex items-center gap-2">
+            <FileText className="w-4 h-4" /> Reports
+          </Link>
+          <button onClick={handleDownloadPdf} disabled={downloading} className="btn-secondary inline-flex items-center gap-2 disabled:opacity-50">
+            <Download className="w-4 h-4" /> {downloading ? 'Preparing...' : 'Download PDF'}
+          </button>
         </div>
       </div>
 
