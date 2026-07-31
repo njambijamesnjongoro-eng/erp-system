@@ -1,15 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const { getPoolConfig } = require('../config/poolConfig');
 require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 5432,
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  database: process.env.DB_NAME || 'erp_system',
-});
+const pool = new Pool(getPoolConfig());
 
 const ACTIONS = new Set(['create', 'read', 'update', 'delete', 'approve', 'export']);
 const ADMIN_ROLES = ['System Admin', 'CEO'];

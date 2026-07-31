@@ -21,6 +21,13 @@ const migrations = [
   'seed.js',
   'seed_admin.js',
   'seed_module_permissions.js',
+  'seed_finance.js',
+  'seed_assets.js',
+  'seed_procurement.js',
+  'seed_analytics.js',
+  'seed_portal.js',
+  'seed_enterprise.js',
+  'seed_supplement.js',
 ];
 
 for (const migration of migrations) {
