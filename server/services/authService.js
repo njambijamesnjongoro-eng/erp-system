@@ -87,6 +87,11 @@ async function loginUser(email, password, ipAddress, userAgent, deviceFingerprin
 
   const user = result.rows[0];
 
+  if (user.deleted_at) {
+    await logAuthentication(user.id, email, ipAddress, userAgent, 'LOGIN', 'FAILED', 'Account deleted');
+    throw new ForbiddenError('Account deleted');
+  }
+
   if (user.is_locked) {
     if (user.locked_until && new Date() < user.locked_until) {
       const remaining = Math.ceil((user.locked_until - new Date()) / 60000);
@@ -236,7 +241,7 @@ async function refreshAccessToken(refreshToken) {
   try {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET);
     const result = await query(
-      `SELECT rt.*, u.role_id, r.name as role_name FROM refresh_tokens rt
+      `SELECT rt.*, u.is_active, u.is_locked, u.deleted_at, u.role_id, r.name as role_name FROM refresh_tokens rt
        JOIN users u ON rt.user_id = u.id
        JOIN roles r ON u.role_id = r.id
        WHERE rt.token = $1 AND rt.expires_at > CURRENT_TIMESTAMP`,
@@ -248,6 +253,19 @@ async function refreshAccessToken(refreshToken) {
     }
 
     const tokenData = result.rows[0];
+    if (tokenData.deleted_at) {
+      await query('DELETE FROM refresh_tokens WHERE user_id = $1', [tokenData.user_id]);
+      throw new UnauthorizedError('Account deleted');
+    }
+    if (!tokenData.is_active) {
+      await query('DELETE FROM refresh_tokens WHERE user_id = $1', [tokenData.user_id]);
+      throw new UnauthorizedError('Account is deactivated');
+    }
+    if (tokenData.is_locked) {
+      await query('DELETE FROM refresh_tokens WHERE user_id = $1', [tokenData.user_id]);
+      throw new UnauthorizedError('Account is locked');
+    }
+
     const { accessToken, refreshToken: newRefreshToken } = generateTokens(tokenData.user_id, tokenData.role_name);
 
     await query('DELETE FROM refresh_tokens WHERE id = $1', [tokenData.id]);
@@ -400,6 +418,9 @@ async function verifyMFAAndCompleteLogin(userId, mfaMethod, otpCode, preAuthToke
   );
   if (!userResult.rows.length) throw new UnauthorizedError('User not found');
   const user = userResult.rows[0];
+  if (user.deleted_at) throw new UnauthorizedError('Account deleted');
+  if (!user.is_active) throw new UnauthorizedError('Account is deactivated');
+  if (user.is_locked) throw new UnauthorizedError('Account is locked');
 
   const tokens = generateTokens(user.id, user.role_name, { mfaVerified: true });
   const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);

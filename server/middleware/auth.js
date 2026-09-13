@@ -14,16 +14,20 @@ async function authenticate(req, res, next) {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const result = await pool.query(
-      `SELECT u.id, u.email, u.is_active, u.is_locked, u.role_id, r.name as role_name, ep.id as employee_id
+      `SELECT u.id, u.email, u.is_active, u.is_locked, u.deleted_at, u.role_id, r.name as role_name, ep.id as employee_id
        FROM users u JOIN roles r ON u.role_id = r.id LEFT JOIN employee_profiles ep ON ep.user_id = u.id WHERE u.id = $1`,
       [decoded.userId]
     );
 
     if (result.rows.length === 0) {
-      throw new UnauthorizedError('User not found');
+      throw new UnauthorizedError('Account deleted');
     }
 
     const user = result.rows[0];
+
+    if (user.deleted_at) {
+      throw new UnauthorizedError('Account deleted');
+    }
 
     if (!user.is_active) {
       throw new UnauthorizedError('Account is deactivated');

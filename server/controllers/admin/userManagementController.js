@@ -34,7 +34,13 @@ exports.listUsers = async (req, res) => {
     const params = [];
     const conditions = [];
     let sql = `SELECT u.id, u.email, COALESCE(ep.full_name, u.email) AS full_name,
-      r.name as role_name, u.is_active, u.is_locked, u.last_login, u.created_at, u.updated_at
+      r.name as role_name, u.is_active, u.is_locked, u.deleted_at, u.last_login, u.created_at, u.updated_at,
+      CASE
+        WHEN u.deleted_at IS NOT NULL THEN 'deleted'
+        WHEN u.is_locked = true THEN 'locked'
+        WHEN u.is_active = true THEN 'active'
+        ELSE 'inactive'
+      END AS status
       FROM users u
       JOIN roles r ON u.role_id = r.id
       LEFT JOIN employee_profiles ep ON ep.user_id = u.id`;
@@ -43,11 +49,13 @@ exports.listUsers = async (req, res) => {
       params.push(role);
     }
     if (status === 'active') {
-      conditions.push(`u.is_active = true`);
+      conditions.push(`u.is_active = true AND u.deleted_at IS NULL`);
     } else if (status === 'inactive') {
-      conditions.push(`u.is_active = false`);
+      conditions.push(`u.is_active = false AND u.deleted_at IS NULL`);
     } else if (status === 'locked') {
-      conditions.push(`u.is_locked = true`);
+      conditions.push(`u.is_locked = true AND u.deleted_at IS NULL`);
+    } else if (status === 'deleted') {
+      conditions.push(`u.deleted_at IS NOT NULL`);
     }
     if (search) {
       conditions.push(`(u.email ILIKE $${params.length + 1} OR ep.full_name ILIKE $${params.length + 1})`);
@@ -71,7 +79,7 @@ exports.getUser = async (req, res) => {
     const { id } = req.params;
     const userResult = await db.query(
       `SELECT u.id, u.email, COALESCE(ep.full_name, u.email) AS full_name,
-        r.name as role_name, u.is_active, u.is_locked, u.last_login, u.password_changed_at,
+        r.name as role_name, u.is_active, u.is_locked, u.deleted_at, u.last_login, u.password_changed_at,
         u.created_at, u.updated_at, r.permissions
        FROM users u
        LEFT JOIN roles r ON u.role_id = r.id
@@ -96,9 +104,11 @@ exports.createUser = async (req, res) => {
     if (!email || !password || !role_name) {
       return res.status(400).json({ success: false, message: 'Email, password, and role are required' });
     }
-    const existing = await db.query(`SELECT id FROM users WHERE email = $1`, [email]);
+    const existing = await db.query(`SELECT id, deleted_at FROM users WHERE email = $1`, [email]);
     if (existing.rows.length > 0) {
-      return res.status(409).json({ success: false, message: 'Email already exists' });
+      if (!existing.rows[0].deleted_at) {
+        return res.status(409).json({ success: false, message: 'Email already exists' });
+      }
     }
     const roleResult = await db.query(`SELECT id FROM roles WHERE name = $1`, [role_name]);
     if (roleResult.rows.length === 0) {
@@ -106,11 +116,21 @@ exports.createUser = async (req, res) => {
     }
     const role_id = roleResult.rows[0].id;
     const hashedPassword = await bcrypt.hash(password, 10);
-    const result = await db.query(
-      `INSERT INTO users (email, password_hash, role_id, is_active, created_at, updated_at)
-       VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id, email, role_id, is_active, created_at`,
-      [email, hashedPassword, role_id]
-    );
+    const result = existing.rows.length > 0
+      ? await db.query(
+        `UPDATE users
+         SET password_hash = $1, role_id = $2, is_active = true, is_locked = false,
+             deleted_at = NULL, deleted_by = NULL, login_attempts = 0, locked_until = NULL,
+             password_changed_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+         WHERE id = $3
+         RETURNING id, email, role_id, is_active, created_at`,
+        [hashedPassword, role_id, existing.rows[0].id]
+      )
+      : await db.query(
+        `INSERT INTO users (email, password_hash, role_id, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, true, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP) RETURNING id, email, role_id, is_active, created_at`,
+        [email, hashedPassword, role_id]
+      );
     const profile = await upsertEmployeeProfile(result.rows[0].id, email, full_name, role_name);
     res.status(201).json({ success: true, data: { ...result.rows[0], role_name, full_name: profile?.full_name || full_name || null } });
   } catch (err) {
@@ -167,34 +187,24 @@ exports.deleteUser = async (req, res) => {
       return res.status(400).json({ success: false, message: 'You cannot remove your own account while logged in' });
     }
 
-    if (req.query.hard === 'true' || req.query.permanent === 'true') {
-      try {
-        await SessionEngine.terminateAllUserSessions(id);
-        await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
-        const result = await db.query('DELETE FROM users WHERE id = $1 RETURNING id, email', [id]);
-        if (result.rows.length === 0) {
-          return res.status(404).json({ success: false, message: 'User not found' });
-        }
-        return res.json({ success: true, data: { ...result.rows[0], deleted: true }, message: 'User permanently deleted' });
-      } catch (deleteErr) {
-        if (deleteErr.code !== '23503') throw deleteErr;
-      }
-    }
-
     const result = await db.query(
-      `UPDATE users SET is_active = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, email, is_active`,
-      [id]
+      `UPDATE users
+       SET is_active = false, is_locked = true, deleted_at = CURRENT_TIMESTAMP, deleted_by = $2,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, email, is_active, is_locked, deleted_at`,
+      [id, req.user.id]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     await SessionEngine.terminateAllUserSessions(id);
+    await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
+    await db.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [id]);
     res.json({
       success: true,
-      data: result.rows[0],
-      message: req.query.hard === 'true' || req.query.permanent === 'true'
-        ? 'User has company records, so the account was deactivated instead of permanently deleted'
-        : 'User deactivated',
+      data: { ...result.rows[0], deleted: true },
+      message: 'User account deleted and access revoked',
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -205,7 +215,11 @@ exports.activateUser = async (req, res) => {
   try {
     const { id } = req.params;
     const result = await db.query(
-      `UPDATE users SET is_active = true, is_locked = false, updated_at = CURRENT_TIMESTAMP WHERE id = $1 RETURNING id, email, is_active, is_locked`,
+      `UPDATE users
+       SET is_active = true, is_locked = false, deleted_at = NULL, deleted_by = NULL,
+           login_attempts = 0, locked_until = NULL, updated_at = CURRENT_TIMESTAMP
+       WHERE id = $1
+       RETURNING id, email, is_active, is_locked, deleted_at`,
       [id]
     );
     if (result.rows.length === 0) {
@@ -228,6 +242,7 @@ exports.deactivateUser = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     await SessionEngine.terminateAllUserSessions(id);
+    await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -245,6 +260,7 @@ exports.lockUser = async (req, res) => {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
     await SessionEngine.terminateAllUserSessions(id);
+    await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
     res.json({ success: true, data: result.rows[0] });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -313,6 +329,7 @@ exports.forceLogout = async (req, res) => {
   try {
     const { id } = req.params;
     const sessions = await SessionEngine.terminateAllUserSessions(id);
+    await db.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
     await db.query(
       `UPDATE users SET last_logout = CURRENT_TIMESTAMP WHERE id = $1`,
       [id]

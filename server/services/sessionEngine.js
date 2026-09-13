@@ -18,7 +18,7 @@ class SessionEngine {
        JOIN users u ON us.user_id = u.id
        LEFT JOIN roles r ON u.role_id = r.id
        LEFT JOIN employee_profiles ep ON ep.user_id = u.id
-       WHERE us.token = $1 AND us.is_active = true`,
+       WHERE us.token = $1 AND us.is_active = true AND u.is_active = true AND u.deleted_at IS NULL`,
       [token]
     );
     return result.rows[0] || null;
@@ -64,7 +64,7 @@ class SessionEngine {
        JOIN users u ON us.user_id = u.id
        LEFT JOIN roles r ON u.role_id = r.id
        LEFT JOIN employee_profiles ep ON ep.user_id = u.id
-       WHERE us.is_active = true
+       WHERE us.is_active = true AND u.is_active = true AND u.deleted_at IS NULL
        ORDER BY us.last_activity DESC
        LIMIT $1`,
       [limit]
@@ -92,7 +92,7 @@ class SessionEngine {
        FROM user_sessions us
        JOIN users u ON us.user_id = u.id
        LEFT JOIN employee_profiles ep ON ep.user_id = u.id
-       WHERE us.is_active = true AND us.last_activity >= CURRENT_TIMESTAMP - INTERVAL '15 minutes'`
+       WHERE us.is_active = true AND u.is_active = true AND u.deleted_at IS NULL AND us.last_activity >= CURRENT_TIMESTAMP - INTERVAL '15 minutes'`
     );
     return result.rows[0];
   }

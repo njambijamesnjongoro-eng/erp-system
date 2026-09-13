@@ -2,6 +2,7 @@ const { pool } = require('../config/db');
 const { NotFoundError } = require('../utils/errors');
 const { sanitizeUser, paginate, buildPaginationMeta } = require('../utils/helpers');
 const authService = require('../services/authService');
+const SessionEngine = require('../services/sessionEngine');
 
 const list = async (req, res, next) => {
   try {
@@ -90,7 +91,7 @@ const update = async (req, res, next) => {
     const { roleId, isActive } = req.body;
     const { id } = req.params;
 
-    const existing = await pool.query('SELECT id FROM users WHERE id = $1', [id]);
+    const existing = await pool.query('SELECT id, is_active FROM users WHERE id = $1', [id]);
     if (existing.rows.length === 0) {
       throw new NotFoundError('User not found');
     }
@@ -117,6 +118,11 @@ const update = async (req, res, next) => {
       );
     }
 
+    if (isActive === false) {
+      await SessionEngine.terminateAllUserSessions(id);
+      await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
+    }
+
     if (req.body.roleId) {
       await authService.logAudit(req.user.id, 'UPDATE_USER_ROLE', 'users', id,
         { newRoleId: roleId }, req.ip);
@@ -137,6 +143,10 @@ const toggleActive = async (req, res, next) => {
     );
     if (result.rows.length === 0) {
       throw new NotFoundError('User not found');
+    }
+    if (!result.rows[0].is_active) {
+      await SessionEngine.terminateAllUserSessions(id);
+      await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [id]);
     }
     await authService.logAudit(req.user.id, 'TOGGLE_USER_ACTIVE', 'users', id,
       { isActive: result.rows[0].is_active }, req.ip);

@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   is_active BOOLEAN DEFAULT true,
   is_locked BOOLEAN DEFAULT false,
+  deleted_at TIMESTAMP,
+  deleted_by UUID REFERENCES users(id) ON DELETE SET NULL,
   login_attempts INTEGER DEFAULT 0,
   locked_until TIMESTAMP,
   last_login TIMESTAMP,
@@ -72,6 +74,9 @@ CREATE TABLE IF NOT EXISTS users (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_by UUID REFERENCES users(id) ON DELETE SET NULL;
 
 -- ============================================================
 -- EMPLOYEE_PROFILES (extended for HR)

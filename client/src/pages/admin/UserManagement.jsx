@@ -126,7 +126,7 @@ export function UserManagement() {
   };
 
   const getStatusBadge = (status) => {
-    const colors = { active: 'badge-success', inactive: 'badge-gray', locked: 'badge-red', suspended: 'badge-warning' };
+    const colors = { active: 'badge-success', inactive: 'badge-gray', locked: 'badge-red', suspended: 'badge-warning', deleted: 'badge-red' };
     return <span className={`badge ${colors[status] || 'badge-gray'}`}>{status}</span>;
   };
 
@@ -164,6 +164,7 @@ export function UserManagement() {
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
               <option value="locked">Locked</option>
+              <option value="deleted">Deleted</option>
               <option value="suspended">Suspended</option>
             </select>
           </div>
@@ -198,7 +199,7 @@ export function UserManagement() {
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => openEdit(u)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg" title="Edit"><Edit3 className="w-4 h-4" /></button>
                           <button onClick={() => viewSessions(u.id)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg" title="Sessions"><Eye className="w-4 h-4" /></button>
-                          {u.status === 'active' || u.is_active ? (
+                          {u.status === 'active' || (u.is_active && u.status !== 'deleted') ? (
                             <button onClick={() => handleDeactivate(u.id)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-amber-500" title="Deactivate"><UserX className="w-4 h-4" /></button>
                           ) : (
                             <button onClick={() => handleActivate(u.id)} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg text-emerald-500" title="Activate"><CheckCircle className="w-4 h-4" /></button>

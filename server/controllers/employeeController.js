@@ -2,6 +2,7 @@ const { pool } = require('../config/db');
 const { NotFoundError, BadRequestError } = require('../utils/errors');
 const { paginate, buildPaginationMeta } = require('../utils/helpers');
 const authService = require('../services/authService');
+const SessionEngine = require('../services/sessionEngine');
 
 const list = async (req, res, next) => {
   try {
@@ -195,10 +196,31 @@ const update = async (req, res, next) => {
 const remove = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const employee = await pool.query('SELECT id, user_id FROM employee_profiles WHERE id = $1', [id]);
+    if (employee.rows.length === 0) throw new NotFoundError('Employee not found');
+
+    const linkedUserId = employee.rows[0].user_id;
+    if (linkedUserId && linkedUserId === req.user.id) {
+      throw new BadRequestError('You cannot delete your own employee account while logged in');
+    }
+
+    if (linkedUserId) {
+      await pool.query(
+        `UPDATE users
+         SET is_active = false, is_locked = true, deleted_at = CURRENT_TIMESTAMP, deleted_by = $2,
+             updated_at = CURRENT_TIMESTAMP
+         WHERE id = $1`,
+        [linkedUserId, req.user.id]
+      );
+      await SessionEngine.terminateAllUserSessions(linkedUserId);
+      await pool.query('DELETE FROM refresh_tokens WHERE user_id = $1', [linkedUserId]);
+      await pool.query('DELETE FROM password_reset_tokens WHERE user_id = $1', [linkedUserId]);
+    }
+
     const result = await pool.query('DELETE FROM employee_profiles WHERE id = $1 RETURNING id', [id]);
     if (result.rows.length === 0) throw new NotFoundError('Employee not found');
-    await authService.logAudit(req.user.id, 'DELETE_EMPLOYEE', 'employees', id, {}, req.ip);
-    res.json({ success: true, message: 'Employee deleted' });
+    await authService.logAudit(req.user.id, 'DELETE_EMPLOYEE', 'employees', id, { linkedUserId }, req.ip);
+    res.json({ success: true, message: linkedUserId ? 'Employee and login account deleted' : 'Employee deleted' });
   } catch (err) {
     next(err);
   }
